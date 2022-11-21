@@ -1,0 +1,51 @@
+syntax = "proto3";
+service Atm {
+  rpc Authenticate (AuthenticateRequest) returns (AuthenticateResponse) {}
+  rpc Withdraw (WithdrawRequest) returns (WithdrawReply) {}
+  rpc Deposit (DepositRequest) returns (DepositReply) {}
+  rpc Balance (BalanceRequest) returns (BalanceReply) {}
+}
+message AuthenticateRequest {
+    string username = 1; // username of the user
+    int32 pin = 2; // pin of the user
+}
+
+message AuthenticateResponse {
+    bool success = 1; // true if the user is authenticated
+    string error = 2; // error message if the user is not authenticated
+    string AuthCode = 3; // authentication code for future requests
+}
+
+message WithdrawRequest {
+    string AuthCode = 1; // authentication code
+    int64 units = 2; // number of units to withdraw
+    int32 denomination = 3; // denomination of the units (money = units / denomination)
+    // e.g to withdraw 5.50$ units = 550, denomination = 100 or units = 11, denomination = 2
+}
+message WithdrawReply {
+    bool success = 1; // true if the withdraw was successful
+    string error = 2; // error message if the withdraw was not successful
+    int64 units = 3; // number of units withdrawn
+    int32 denomination = 4; // denomination of the units (money = units / denomination)
+}
+message DepositRequest {
+    string AuthCode = 1; // authentication code
+    int64 units = 2; // number of units to deposit
+    int32 denomination = 3; // denomination of the units (money = units / denomination)
+    // e.g to deposit 5.50$ units = 550, denomination = 100 or units = 11, denomination = 2
+}
+message DepositReply {
+    bool success = 1; // true if the deposit was successful
+    string error = 2; // error message if the deposit was not successful
+    int64 units = 3; // number of units deposited
+    int32 denomination = 4; // denomination of the units (money = units / denomination)
+}
+message BalanceRequest {
+    string AuthCode = 1; // authentication code
+}
+message BalanceReply {
+    bool success = 1; // true if the balance was retrieved successfully
+    string error = 2; // error message if the balance was not retrieved successfully
+    int64 units = 3; // number of units in the account
+    int32 denomination = 4; // denomination of the units (money = units / denomination)
+}
