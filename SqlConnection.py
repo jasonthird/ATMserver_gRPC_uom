@@ -118,7 +118,16 @@ class Sql:
             return e
         finally:
             conn.close()
-
+    def getBalance(self,authcode):
+        try:
+            conn = self.connect()
+            cur = conn.cursor()
+            cur.execute("SELECT balance FROM balances WHERE owner_id = (SELECT owner_id FROM authCode WHERE AuthCode = ?)", (authcode,))
+            return cur.fetchone()[0]
+        except mariadb.Error as e:
+            return e
+        finally:
+            conn.close()
     def insertBalance(self, owner_id, balance):
         try:
             conn = self.connect()

@@ -8,7 +8,7 @@ import grpc
 import atm_pb2
 import atm_pb2_grpc
 
-getcontext().prec = 13 + 4
+getcontext().prec = 23
 
 
 class BadRequest(Exception):

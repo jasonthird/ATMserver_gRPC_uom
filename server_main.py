@@ -11,7 +11,7 @@ import atm_pb2_grpc
 from atm_pb2_grpc import AtmServicer
 
 _cleanup_coroutines = []
-getcontext().prec = 19 + 4
+getcontext().prec = 23
 
 class AtmServicer(AtmServicer):
 
@@ -46,8 +46,8 @@ class AtmServicer(AtmServicer):
             return atm_pb2.BalanceReply(success=False, error="Backend error")
 
     async def Withdraw(self, request, context):
-        current = await self.Balance(atm_pb2.BalanceRequest(AuthCode=request.AuthCode), context)
         sql = SqlConnection.Sql()
+        current = sql.getBalance(request.AuthCode)
         money = Decimal(Decimal(request.units) / Decimal(request.denomination))
         try:
             cur = sql.dbConnectAndExecute(
@@ -56,17 +56,18 @@ class AtmServicer(AtmServicer):
                                         IF(balance - ?>= 0., IF(? >= 0., balance - ?, balance), balance)
                                     where AuthCode=?""",
                 (money, money, money, request.AuthCode))
-            after = await self.Balance(atm_pb2.BalanceRequest(AuthCode=request.AuthCode), context)
-            if await after == current:
+            after = sql.getBalance(request.AuthCode)
+            if after == current:
                 return atm_pb2.WithdrawReply(success=False, error="Invalid input")
             else:
                 return atm_pb2.WithdrawReply(success=True)
         except Exception as e:
+            print(e)
             return atm_pb2.WithdrawReply(success=False, error="Backend error")
 
     async def Deposit(self, request, context):
-        current = await self.Balance(atm_pb2.BalanceRequest(AuthCode=request.AuthCode), context)
         sql = SqlConnection.Sql()
+        current = sql.getBalance(request.AuthCode)
         money = Decimal(Decimal(request.units) / Decimal(request.denomination))
         try:
             cur = sql.dbConnectAndExecute(
@@ -75,12 +76,13 @@ class AtmServicer(AtmServicer):
                 where AuthCode=?
                 """,
                 (money, money, request.AuthCode,))
-            after = await self.Balance(atm_pb2.BalanceRequest(AuthCode=request.AuthCode), context)
+            after = sql.getBalance(request.AuthCode)
             if after == current:
                 return atm_pb2.DepositReply(success=False, error="Invalid input")
             else:
                 return atm_pb2.DepositReply(success=True)
         except Exception as e:
+            print(e)
             return atm_pb2.DepositReply(success=False, error="Backend error")
 
 
