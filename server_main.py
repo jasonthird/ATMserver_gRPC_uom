@@ -4,6 +4,7 @@ from concurrent import futures
 from decimal import Decimal, getcontext
 
 import grpc
+import mariadb
 
 import SqlConnection
 import atm_pb2
@@ -13,75 +14,57 @@ from atm_pb2_grpc import AtmServicer
 _cleanup_coroutines = []
 getcontext().prec = 23
 
+
 class AtmServicer(AtmServicer):
 
     async def Authenticate(self, request, context):
         sql = SqlConnection.Sql()
         try:
-            cur = sql.dbConnectAndExecute(
-                """SELECT AuthCode from authCode inner join users u on authCode.owner_id = u.id 
-                where u.id = authCode.owner_id and u.pin = ? and u.username = ?""",
-                (request.pin, request.username))
-            answer = cur.next()
-            if answer is None:
+            Auth = sql.AuthUser(request.username, request.pin)
+            if Auth is False:
                 return atm_pb2.AuthenticateResponse(success=False, error="Wrong pin or username")
             else:
-                return atm_pb2.AuthenticateResponse(success=True, AuthCode=answer[0])
-        except Exception as e:
+                return atm_pb2.AuthenticateResponse(success=True, AuthCode=Auth)
+        except mariadb.Error as e:
+            print(e)
             return atm_pb2.AuthenticateResponse(success=False, error="Backend error")
 
     async def Balance(self, request, context):
         sql = SqlConnection.Sql()
         try:
-            cur = sql.dbConnectAndExecute(
-                "select balance from balances inner join authCode aC on balances.owner_id = aC.owner_id where AuthCode=?"
-                , (str(request.AuthCode),))
-            if cur is None:
-                return atm_pb2.BalanceReply(success=False, error="Wrong AuthCode")
+            response = sql.getBalance(request.AuthCode)
+            if response is False:
+                return atm_pb2.BalanceReply(success=False, error="Invalid AuthCode")
             else:
-                answer = cur.next()
-                d = Decimal(answer[0]).as_integer_ratio()
+                d = Decimal(response).as_integer_ratio()
                 return atm_pb2.BalanceReply(success=True, units=d[0], denomination=d[1])
-        except Exception as e:
+        except mariadb.Error as e:
+            print(e)
             return atm_pb2.BalanceReply(success=False, error="Backend error")
 
     async def Withdraw(self, request, context):
         sql = SqlConnection.Sql()
-        current = sql.getBalance(request.AuthCode)
         money = Decimal(Decimal(request.units) / Decimal(request.denomination))
         try:
-            cur = sql.dbConnectAndExecute(
-                """UPDATE balances inner join authCode aC on balances.owner_id = aC.owner_id
-                                        set balance =
-                                        IF(balance - ?>= 0., IF(? >= 0., balance - ?, balance), balance)
-                                    where AuthCode=?""",
-                (money, money, money, request.AuthCode))
-            after = sql.getBalance(request.AuthCode)
-            if after == current:
+            sqlAwnser = sql.Withdraw(request.AuthCode, money)
+            if sqlAwnser[0] == sqlAwnser[1]:
                 return atm_pb2.WithdrawReply(success=False, error="Invalid input")
             else:
                 return atm_pb2.WithdrawReply(success=True)
-        except Exception as e:
+        except mariadb.Error as e:
             print(e)
             return atm_pb2.WithdrawReply(success=False, error="Backend error")
 
     async def Deposit(self, request, context):
         sql = SqlConnection.Sql()
-        current = sql.getBalance(request.AuthCode)
         money = Decimal(Decimal(request.units) / Decimal(request.denomination))
         try:
-            cur = sql.dbConnectAndExecute(
-                """UPDATE balances inner join authCode aC on balances.owner_id = aC.owner_id 
-                set balance = IF(?>0.0, balance + ?, balance)
-                where AuthCode=?
-                """,
-                (money, money, request.AuthCode,))
-            after = sql.getBalance(request.AuthCode)
-            if after == current:
+            sqlAwnser = sql.Deposit(request.AuthCode, money)
+            if sqlAwnser[0] == sqlAwnser[1]:
                 return atm_pb2.DepositReply(success=False, error="Invalid input")
             else:
                 return atm_pb2.DepositReply(success=True)
-        except Exception as e:
+        except mariadb.Error as e:
             print(e)
             return atm_pb2.DepositReply(success=False, error="Backend error")
 
@@ -101,7 +84,6 @@ async def serve() -> None:
 
     _cleanup_coroutines.append(server_graceful_shutdown())
     await server.wait_for_termination()
-
 
 
 if __name__ == '__main__':

@@ -1,9 +1,11 @@
 import string
 import sys
-from decimal import Decimal
+from decimal import Decimal, getcontext
 import random
 import mariadb
 import json
+
+getcontext().prec = 23
 
 
 class Sql:
@@ -24,7 +26,8 @@ class Sql:
                 password=self.password,
                 host=self.host,
                 port=self.port,
-                database=self.database
+                database=self.database,
+                autocommit=False  # this is important, otherwise we can run into concurrency issues
             )
             return conn
         except mariadb.Error as e:
@@ -118,16 +121,25 @@ class Sql:
             return e
         finally:
             conn.close()
-    def getBalance(self,authcode):
+
+    def getBalance(self, authcode):
         try:
             conn = self.connect()
             cur = conn.cursor()
-            cur.execute("SELECT balance FROM balances WHERE owner_id = (SELECT owner_id FROM authCode WHERE AuthCode = ?)", (authcode,))
-            return cur.fetchone()[0]
+            cur.execute(
+                "SELECT balance FROM balances WHERE owner_id = (SELECT owner_id FROM authCode WHERE AuthCode = ?)",
+                (authcode,))
+            conn.commit()
+            if cur.rowcount == 0:
+                return False
+            else:
+                return cur.fetchone()[0]
         except mariadb.Error as e:
+            conn.rollback()
             return e
         finally:
             conn.close()
+
     def insertBalance(self, owner_id, balance):
         try:
             conn = self.connect()
@@ -145,10 +157,12 @@ class Sql:
         letters = string.ascii_lowercase
         result_str = ''.join(random.choice(letters) for i in range(length))
         return result_str
+
     def get_random_number(self, length):
-        resultInt = random.randint(10**(length-1), (10**length)-1)
+        resultInt = random.randint(10 ** (length - 1), (10 ** length) - 1)
         return resultInt
-    def getUserId(self,user):
+
+    def getUserId(self, user):
         try:
             conn = self.connect()
             cur = conn.cursor()
@@ -158,6 +172,7 @@ class Sql:
             return e
         finally:
             conn.close()
+
     def insertTestData(self):
         try:
             conn = self.connect()
@@ -169,11 +184,91 @@ class Sql:
                 users[username] = pin
             for user in users:
                 self.insertUser(user, users[user])
-                self.insertBalance(self.getUserId(user), Decimal(self.get_random_number(4)+self.get_random_number(2)/100))
+                self.insertBalance(self.getUserId(user),
+                                   Decimal(self.get_random_number(4) + self.get_random_number(2) / 100))
                 self.insertAuthCode(self.getUserId(user), self.get_random_string(40))
                 print("Inserted user: " + user + " with pin: " + str(users[user]))
             return cur
         except mariadb.Error as e:
+            return e
+        finally:
+            conn.close()
+
+    def AuthUser(self, username, pin):
+        try:
+            conn = self.connect()
+            cur = conn.cursor()
+            cur.execute(
+                """SELECT AuthCode from authCode inner join users u on authCode.owner_id = u.id 
+                where u.id = authCode.owner_id and u.pin = ? and u.username = ?""",
+                (pin, username))
+            conn.commit()
+            responce = cur.next()
+            if responce is None:
+                return False
+
+            return responce[0]
+
+        except mariadb.Error as e:
+            conn.rollback()
+            return e
+        finally:
+            conn.close()
+
+    def Withdraw(self, authcode, amount):  # using manual commit acts as a transaction
+        try:
+            conn = self.connect()
+            cur = conn.cursor()
+            cur.execute(
+                "SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;")  # set isolation level to SERIALIZABLE for the transaction
+            cur.execute("START TRANSACTION;")  # just to be sure
+            cur.execute(
+                "SELECT balance FROM balances WHERE owner_id = (SELECT owner_id FROM authCode WHERE AuthCode = ?)",
+                (authcode,))
+            balanceBefore = cur.next()[0]
+            money = Decimal(amount)
+            cur.execute("""UPDATE balances inner join authCode aC on balances.owner_id = aC.owner_id
+                                        set balance =
+                                        IF(balance - ?>= 0., IF(? >= 0., balance - ?, balance), balance)
+                                    where AuthCode=?""",
+                        (money, money, money, authcode))
+            cur.execute(
+                "SELECT balance FROM balances WHERE owner_id = (SELECT owner_id FROM authCode WHERE AuthCode = ?)",
+                (authcode,))
+            balanceAfter = cur.next()[0]
+            conn.commit()
+            return balanceBefore, balanceAfter
+        except mariadb.Error as e:
+            conn.rollback()
+            return e
+        finally:
+            conn.close()
+
+    def Deposit(self, authcode, amount):  # using manual commit acts as a transaction
+        try:
+            conn = self.connect()
+            cur = conn.cursor()
+            cur.execute(
+                "SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;")  # set isolation level to SERIALIZABLE for the transaction
+            cur.execute("START TRANSACTION;")  # just to be sure
+            cur.execute(
+                "SELECT balance FROM balances WHERE owner_id = (SELECT owner_id FROM authCode WHERE AuthCode = ?)",
+                (authcode,))
+            balanceBefore = cur.next()[0]
+            money = Decimal(amount)
+            cur.execute("""UPDATE balances inner join authCode aC on balances.owner_id = aC.owner_id
+                                        set balance =
+                                        IF(? >= 0., balance + ?, balance)
+                                    where AuthCode=?""",
+                        (money, money, authcode))
+            cur.execute(
+                "SELECT balance FROM balances WHERE owner_id = (SELECT owner_id FROM authCode WHERE AuthCode = ?)",
+                (authcode,))
+            balanceAfter = cur.next()[0]
+            conn.commit()
+            return balanceBefore, balanceAfter
+        except mariadb.Error as e:
+            conn.rollback()
             return e
         finally:
             conn.close()
