@@ -59,6 +59,7 @@ class Sql:
             conn.commit()
             return cur
         except mariadb.Error as e:
+            conn.rollback()
             return e
         finally:
             conn.close()
@@ -87,13 +88,14 @@ class Sql:
                     id       int auto_increment
                     primary key,
                     owner_id int            not null comment 'the one from users',
-                    balance  decimal(13, 4) not null comment 'In euro',
+                    balance  decimal(19, 4) not null comment 'In euro',
                     constraint balances_users_null_fk
                         foreign key (owner_id) references users (id)
                 )""")
             conn.commit()
             return cur
         except mariadb.Error as e:
+            conn.rollback()
             return e
         finally:
             conn.close()
@@ -106,6 +108,7 @@ class Sql:
             conn.commit()
             return cur
         except mariadb.Error as e:
+            conn.rollback()
             return e
         finally:
             conn.close()
@@ -118,6 +121,7 @@ class Sql:
             conn.commit()
             return cur
         except mariadb.Error as e:
+            conn.rollback()
             return e
         finally:
             conn.close()
@@ -148,6 +152,7 @@ class Sql:
             conn.commit()
             return cur
         except mariadb.Error as e:
+            conn.rollback()
             return e
         finally:
             conn.close()
@@ -167,8 +172,10 @@ class Sql:
             conn = self.connect()
             cur = conn.cursor()
             cur.execute("SELECT id FROM users WHERE username = ?", (user,))
+            conn.commit()
             return cur.fetchone()[0]
         except mariadb.Error as e:
+            conn.rollback()
             return e
         finally:
             conn.close()
@@ -189,7 +196,9 @@ class Sql:
                 self.insertAuthCode(self.getUserId(user), self.get_random_string(40))
                 print("Inserted user: " + user + " with pin: " + str(users[user]))
             return cur
+            conn.commit()
         except mariadb.Error as e:
+            conn.rollback()
             return e
         finally:
             conn.close()
@@ -272,3 +281,23 @@ class Sql:
             return e
         finally:
             conn.close()
+
+if __name__ == "__main__":
+    import sys
+    sql = Sql()
+    if len(sys.argv) > 1:
+        if sys.argv[1] == "createDb":
+            sql.createDb()
+        elif sys.argv[1] == "createTables":
+            sql.createTables()
+        elif sys.argv[1] == "insertTestData":
+            sql.insertTestData()
+        elif sys.argv[1] == "setupDb":
+            sql.createDb()
+            sql.createTables()
+            sql.insertTestData()
+    else:
+        print("Invalid argument")
+        print("Valid arguments are: createDb, createTables, insertTestData, setupDb")
+        print("Use setupDb to create the database and insert test data")
+        print("Example: python3 sql.py setupDb")
