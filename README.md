@@ -2,7 +2,7 @@
 Exercise for the distributed programming course in university of macedonia
 
 ## Python3.10.8 dependences 
-mariadb(1.1.4) grpcio(1.50.1) grpcio-tools(1.50.0)
+mariadb(1.1.4), grpcio(1.50.1), grpcio-tools(1.50.0)
   
 ## Usage
 Given that you have access to a mariadb instance, modify the sqlConfig.json to configure the database connection.
